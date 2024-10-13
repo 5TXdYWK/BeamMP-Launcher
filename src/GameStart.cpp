@@ -4,6 +4,7 @@
  SPDX-License-Identifier: AGPL-3.0-or-later
 */
 
+#include <cstring>
 #if defined(_WIN32)
 #include <shlobj.h>
 #elif defined(__linux__)
@@ -175,7 +176,6 @@ void StartGame(std::wstring Dir) {
 }
 #elif defined(__linux__)
 void StartGame(std::string Dir) {
-    int status;
     std::string filename = (Dir + "/BinLinux/BeamNG.drive.x64");
     std::vector<const char*> argv;
     argv.push_back(filename.data());
@@ -185,11 +185,24 @@ void StartGame(std::string Dir) {
 
     argv.push_back(nullptr);
     pid_t pid;
-    posix_spawn_file_actions_t spawn_actions;
-    posix_spawn_file_actions_init(&spawn_actions);
-    posix_spawn_file_actions_addclose(&spawn_actions, STDOUT_FILENO);
-    posix_spawn_file_actions_addclose(&spawn_actions, STDERR_FILENO);
-    int result = posix_spawn(&pid, filename.c_str(), &spawn_actions, nullptr, const_cast<char**>(argv.data()), environ);
+
+    posix_spawn_file_actions_t file_actions;
+    auto status = posix_spawn_file_actions_init(&file_actions);
+    // disable stdout
+    if (status != 0) {
+        error(std::string("posix_spawn_file_actions_init failed: ") + std::strerror(errno));
+    }
+    status = posix_spawn_file_actions_addclose(&file_actions, STDOUT_FILENO);
+    if (status != 0) {
+        error(std::string("posix_spawn_file_actions_addclose for STDOUT failed: ") + std::strerror(errno));
+    }
+    status = posix_spawn_file_actions_addclose(&file_actions, STDERR_FILENO);
+    if (status != 0) {
+        error(std::string("posix_spawn_file_actions_addclose for STDERR failed: ") + std::strerror(errno));
+    }
+
+    // launch the game
+    int result = posix_spawn(&pid, filename.c_str(), &file_actions, NULL, const_cast<char**>(argv.data()), environ);
 
     if (result != 0) {
         error("Failed to Launch the game! launcher closing soon");
