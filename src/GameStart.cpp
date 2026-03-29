@@ -4,6 +4,8 @@
  SPDX-License-Identifier: AGPL-3.0-or-later
 */
 
+#include <cstring>
+#include "Utils.h"
 #if defined(_WIN32)
 #include <shlobj.h>
 #elif defined(__linux__)
@@ -18,7 +20,6 @@
 #include "Logger.h"
 #include "Options.h"
 #include "Startup.h"
-#include "Utils.h"
 #include <Security/Init.h>
 #include <filesystem>
 #include <thread>
@@ -57,12 +58,11 @@ std::filesystem::path GetGamePath() {
             if (ini.contains("filesystem") && std::get<std::map<std::string, std::string>>(ini["filesystem"]).contains("UserPath"))
                 userPath = Utils::ToWString(std::get<std::map<std::string, std::string>>(ini["filesystem"])["UserPath"]);
 
-            if (!userPath.empty() && Path.empty())
-                if (userPath = Utils::ExpandEnvVars(userPath); std::filesystem::exists(userPath)) {
-                    Path = userPath;
-                    debug(L"Using custom user folder path from startup.ini: " + Path.wstring());
-                } else
-                    warn(L"Found custom user folder path (" + userPath + L") in startup.ini but it doesn't exist, skipping");
+            if (userPath = Utils::ExpandEnvVars(userPath); std::filesystem::exists(userPath)) {
+                Path = userPath;
+                debug(L"Using custom user folder path from startup.ini: " + Path.wstring());
+            } else
+                warn(L"Found custom user folder path (" + userPath + L") in startup.ini but it doesn't exist, skipping");
         }
 
         if (Path.empty()) {
@@ -94,12 +94,11 @@ std::filesystem::path GetGamePath() {
 
                     }
 
-                    if (!userPath.empty() && Path.empty())
-                        if (userPath = std::filesystem::path(Utils::ExpandEnvVars(userPath)); std::filesystem::exists(userPath)) {
-                            Path = userPath;
-                            debug(L"Using custom user folder path from BeamNG.Drive.ini: " + Path.wstring());
-                        } else
-                            warn(L"Found custom user folder path (" + userPath + L") in BeamNG.Drive.ini but it doesn't exist, skipping");
+                    if (userPath = std::filesystem::path(Utils::ExpandEnvVars(userPath)); std::filesystem::exists(userPath)) {
+                        Path = userPath;
+                        debug(L"Using custom user folder path from BeamNG.Drive.ini: " + Path.wstring());
+                    } else
+                        warn(L"Found custom user folder path (" + userPath + L") in BeamNG.Drive.ini but it doesn't exist, skipping");
                 }
             }
 
@@ -175,7 +174,6 @@ void StartGame(std::wstring Dir) {
 }
 #elif defined(__linux__)
 void StartGame(std::string Dir) {
-    int status;
     std::string filename = (Dir + "/BinLinux/BeamNG.drive.x64");
     std::vector<const char*> argv;
     argv.push_back(filename.data());
@@ -185,11 +183,24 @@ void StartGame(std::string Dir) {
 
     argv.push_back(nullptr);
     pid_t pid;
-    posix_spawn_file_actions_t spawn_actions;
-    posix_spawn_file_actions_init(&spawn_actions);
-    posix_spawn_file_actions_addclose(&spawn_actions, STDOUT_FILENO);
-    posix_spawn_file_actions_addclose(&spawn_actions, STDERR_FILENO);
-    int result = posix_spawn(&pid, filename.c_str(), &spawn_actions, nullptr, const_cast<char**>(argv.data()), environ);
+
+    posix_spawn_file_actions_t file_actions;
+    auto status = posix_spawn_file_actions_init(&file_actions);
+    // disable stdout
+    if (status != 0) {
+        error(std::string("posix_spawn_file_actions_init failed: ") + std::strerror(errno));
+    }
+    status = posix_spawn_file_actions_addclose(&file_actions, STDOUT_FILENO);
+    if (status != 0) {
+        error(std::string("posix_spawn_file_actions_addclose for STDOUT failed: ") + std::strerror(errno));
+    }
+    status = posix_spawn_file_actions_addclose(&file_actions, STDERR_FILENO);
+    if (status != 0) {
+        error(std::string("posix_spawn_file_actions_addclose for STDERR failed: ") + std::strerror(errno));
+    }
+
+    // launch the game
+    int result = posix_spawn(&pid, filename.c_str(), &file_actions, NULL, const_cast<char**>(argv.data()), environ);
 
     if (result != 0) {
         error("Failed to Launch the game! launcher closing soon");

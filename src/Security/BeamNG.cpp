@@ -6,6 +6,7 @@
 
 
 #include <filesystem>
+#include "Utils.h"
 #if defined(_WIN32)
 #include <shlobj_core.h>
 #elif defined(__linux__)
@@ -15,8 +16,6 @@
 #include <vector>
 #endif
 #include "Logger.h"
-#include "Utils.h"
-
 #include <fstream>
 #include <string>
 #include <thread>
