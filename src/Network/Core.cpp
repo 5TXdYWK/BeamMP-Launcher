@@ -7,7 +7,10 @@
 #include "Http.h"
 #include "Network/network.hpp"
 #include "Security/Init.h"
+#include "Startup.h"
 #include "Utils.h"
+#include "Voice/Protocol.hpp"
+#include "Voice/VoiceManager.hpp"
 #include <cstdlib>
 #include <regex>
 #if defined(_WIN32)
@@ -35,6 +38,9 @@
 #include "Options.h"
 
 #include <future>
+#include <sstream>
+#include <string_view>
+#include <vector>
 
 extern int TraceBack;
 std::set<std::string>* ConfList = nullptr;
@@ -346,6 +352,62 @@ void Parse(std::string Data, SOCKET CSocket) {
         });
         break;
     }
+    case 'J':
+        if (SubCode == 'g') {
+            Data = "J" + Voice::VoiceManager::Get().GetSettingsJson();
+        } else if (SubCode == 's') {
+            if (Voice::VoiceManager::Get().ApplySettingsJson(Data.substr(2))) {
+                SaveVoiceConfig();
+                Data = "JOK";
+            } else {
+                Data = "JERR";
+            }
+        } else if (SubCode == 't') {
+            const bool active = Data.size() > 2 && Data[2] == '1';
+            Voice::VoiceManager::Get().SetTalkState(active);
+            ServerSend(Voice::VoiceManager::Get().MakeStatePacket(active), true);
+            Data = "JT" + std::string(active ? "1" : "0");
+        } else if (SubCode == 'd') {
+            Voice::VoiceManager::Get().RefreshDeviceSelection();
+            Data = "J" + Voice::VoiceManager::Get().GetSettingsJson();
+        } else if (SubCode == 'p') {
+            // Format from game: Jp<x:y:z:vx:vy:vz>
+            std::string_view body = std::string_view(Data).substr(2);
+            std::vector<std::string_view> parts {};
+            size_t start = 0;
+            while (start <= body.size()) {
+                size_t sep = body.find(':', start);
+                if (sep == std::string_view::npos) {
+                    parts.push_back(body.substr(start));
+                    break;
+                }
+                parts.push_back(body.substr(start, sep - start));
+                start = sep + 1;
+            }
+            if (parts.size() >= 6) {
+                auto toFloat = [](std::string_view value, float& out) {
+                    std::string copy(value);
+                    std::stringstream ss(copy);
+                    ss >> out;
+                    return !ss.fail();
+                };
+                Voice::SpatialPacket packet {};
+                packet.player_id = ClientID;
+                bool ok = toFloat(parts[0], packet.x) && toFloat(parts[1], packet.y) && toFloat(parts[2], packet.z) && toFloat(parts[3], packet.vx) && toFloat(parts[4], packet.vy) && toFloat(parts[5], packet.vz);
+                if (ok) {
+                    Voice::VoiceManager::Get().UpdateSpatialState(packet);
+                    ServerSend(Voice::SerializeSpatialPacket(packet), false);
+                    Data = "JPOK";
+                } else {
+                    Data = "JPERR";
+                }
+            } else {
+                Data = "JPERR";
+            }
+        } else {
+            Data.clear();
+        }
+        break;
     default:
         Data.clear();
         break;

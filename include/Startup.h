@@ -19,3 +19,4 @@ std::string GetVer();
 std::string GetPatch();
 beammp_fs_string GetEN();
 void ConfigInit();
+void SaveVoiceConfig();

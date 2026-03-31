@@ -18,6 +18,8 @@ file(GLOB source_files "src/*.cpp" "src/*/*.cpp" "src/*/*.hpp" "include/*.h"  "i
 find_package(httplib CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(CURL REQUIRED)
+find_package(Opus CONFIG)
+find_package(portaudio CONFIG)
 
 add_executable(${PROJECT_NAME} ${source_files})
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "BeamMP-Launcher")
@@ -37,4 +39,14 @@ else(WIN32) #MINGW
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -s --static")
     target_link_libraries(${PROJECT_NAME} ssl crypto ws2_32 ssp crypt32 z CURL::libcurl)
 endif(WIN32)
+
+if (TARGET Opus::opus)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Opus::opus)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE BEAMMP_VOIP_HAS_OPUS=1)
+endif()
+
+if (TARGET portaudio)
+    target_link_libraries(${PROJECT_NAME} PRIVATE portaudio)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE BEAMMP_VOIP_HAS_PORTAUDIO=1)
+endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "include")

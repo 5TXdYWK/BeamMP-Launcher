@@ -6,6 +6,7 @@
 
 
 #include "Network/network.hpp"
+#include "Voice/VoiceManager.hpp"
 #include <chrono>
 #include <iomanip>
 #include <ios>
@@ -92,6 +93,7 @@ std::string Auth(SOCKET Sock) {
     Res = Res.substr(1);
     if (Res.find_first_not_of("0123456789") == std::string::npos) {
         ClientID = std::stoi(Res);
+        Voice::VoiceManager::Get().SetLocalPlayerId(ClientID);
     } else {
         Abord();
         CoreSend("L");

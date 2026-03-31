@@ -10,6 +10,7 @@
 #include "Security/Init.h"
 #include "Startup.h"
 #include "Utils.h"
+#include "Voice/VoiceTests.hpp"
 #include <curl/curl.h>
 #include <iostream>
 #include <thread>
@@ -34,6 +35,7 @@ int main(int argc, const char** argv) try {
 #ifdef DEBUG
     std::thread th(flush);
     th.detach();
+    Voice::RunSelfTests();
 #endif
 
     curl_global_init(CURL_GLOBAL_ALL);

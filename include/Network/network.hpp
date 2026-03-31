@@ -42,6 +42,7 @@ extern std::string magic;
 int KillSocket(uint64_t Dead);
 void UUl(const std::string& R);
 void UDPSend(std::string Data);
+void ServerSend(std::string Data, bool Rel = false);
 bool CheckBytes(int32_t Bytes);
 void GameSend(std::string_view Data);
 void SendLarge(std::string Data);

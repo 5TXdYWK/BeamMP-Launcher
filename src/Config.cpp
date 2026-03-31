@@ -7,6 +7,7 @@
 #include "Logger.h"
 #include "Network/network.hpp"
 #include "Options.h"
+#include "Voice/VoiceManager.hpp"
 #include "Utils.h"
 #include <cstdint>
 #include <filesystem>
@@ -49,6 +50,42 @@ void ParseConfig(const nlohmann::json& d) {
         deleteDuplicateMods = d["DeleteDuplicateMods"].get<bool>();
     }
 
+    auto settings = Voice::VoiceManager::Get().GetSettings();
+    if (d.contains("Voice") && d["Voice"].is_object()) {
+        const auto& voice = d["Voice"];
+        if (voice.contains("Enabled") && voice["Enabled"].is_boolean()) {
+            settings.enabled = voice["Enabled"].get<bool>();
+        }
+        if (voice.contains("PushToTalk") && voice["PushToTalk"].is_boolean()) {
+            settings.push_to_talk = voice["PushToTalk"].get<bool>();
+        }
+        if (voice.contains("FollowSystemDefaults") && voice["FollowSystemDefaults"].is_boolean()) {
+            settings.follow_system_defaults = voice["FollowSystemDefaults"].get<bool>();
+        }
+        if (voice.contains("InputDeviceId") && voice["InputDeviceId"].is_string()) {
+            settings.input_device_id = voice["InputDeviceId"].get<std::string>();
+        }
+        if (voice.contains("OutputDeviceId") && voice["OutputDeviceId"].is_string()) {
+            settings.output_device_id = voice["OutputDeviceId"].get<std::string>();
+        }
+        if (voice.contains("MicGain") && voice["MicGain"].is_number()) {
+            settings.mic_gain = voice["MicGain"].get<float>();
+        }
+        if (voice.contains("OutputGain") && voice["OutputGain"].is_number()) {
+            settings.output_gain = voice["OutputGain"].get<float>();
+        }
+        if (voice.contains("AttenuationNearMeters") && voice["AttenuationNearMeters"].is_number()) {
+            settings.attenuation_near_meters = voice["AttenuationNearMeters"].get<float>();
+        }
+        if (voice.contains("AttenuationFarMeters") && voice["AttenuationFarMeters"].is_number()) {
+            settings.attenuation_far_meters = voice["AttenuationFarMeters"].get<float>();
+        }
+        if (voice.contains("AttenuationSmoothing") && voice["AttenuationSmoothing"].is_number()) {
+            settings.attenuation_smoothing = voice["AttenuationSmoothing"].get<float>();
+        }
+    }
+    Voice::VoiceManager::Get().SetSettings(settings);
+
 }
 
 void ConfigInit() {
@@ -73,11 +110,60 @@ void ConfigInit() {
                 R"({
     "Port": 4444,
     "Build": "Default",
-    "CachingDirectory": "./Resources"
+    "CachingDirectory": "./Resources",
+    "Voice": {
+        "Enabled": true,
+        "PushToTalk": true,
+        "FollowSystemDefaults": true,
+        "InputDeviceId": "default",
+        "OutputDeviceId": "default",
+        "MicGain": 1.0,
+        "OutputGain": 1.0,
+        "AttenuationNearMeters": 10.0,
+        "AttenuationFarMeters": 120.0,
+        "AttenuationSmoothing": 0.2
+    }
 })";
             cfg.close();
         } else {
             fatal("Failed to write config on disk!");
         }
     }
+}
+
+void SaveVoiceConfig() {
+    nlohmann::json cfg = nlohmann::json::object();
+    if (fs::exists("Launcher.cfg")) {
+        std::ifstream in("Launcher.cfg");
+        if (in.is_open()) {
+            const auto size = fs::file_size("Launcher.cfg");
+            std::string buffer(size, 0);
+            in.read(&buffer[0], static_cast<std::streamsize>(size));
+            in.close();
+            auto parsed = nlohmann::json::parse(buffer, nullptr, false);
+            if (!parsed.is_discarded() && parsed.is_object()) {
+                cfg = parsed;
+            }
+        }
+    }
+    const auto settings = Voice::VoiceManager::Get().GetSettings();
+    cfg["Voice"] = {
+        { "Enabled", settings.enabled },
+        { "PushToTalk", settings.push_to_talk },
+        { "FollowSystemDefaults", settings.follow_system_defaults },
+        { "InputDeviceId", settings.input_device_id },
+        { "OutputDeviceId", settings.output_device_id },
+        { "MicGain", settings.mic_gain },
+        { "OutputGain", settings.output_gain },
+        { "AttenuationNearMeters", settings.attenuation_near_meters },
+        { "AttenuationFarMeters", settings.attenuation_far_meters },
+        { "AttenuationSmoothing", settings.attenuation_smoothing }
+    };
+
+    std::ofstream out("Launcher.cfg", std::ios::trunc);
+    if (!out.is_open()) {
+        error("Failed to persist voice config to Launcher.cfg");
+        return;
+    }
+    out << cfg.dump(4);
 }

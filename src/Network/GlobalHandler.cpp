@@ -6,6 +6,8 @@
 
 #include "Network/network.hpp"
 #include "Utils.h"
+#include "Voice/Protocol.hpp"
+#include "Voice/VoiceManager.hpp"
 #include <memory>
 #include <zlib.h>
 #if defined(_WIN32)
@@ -74,6 +76,15 @@ void GameSend(std::string_view Data) {
 void ServerSend(std::string Data, bool Rel) {
     if (Terminate || Data.empty())
         return;
+    if (Voice::IsVoiceEnvelope(Data)) {
+        // VOIP frame/state packets use dedicated transport policy.
+        if (Data.find("VOIP:FRAME:") == 0) {
+            UDPSend(Data);
+        } else {
+            TCPSend(Data, TCPSock);
+        }
+        return;
+    }
     if (Data.find("Zp") != std::string::npos && Data.size() > 500) {
         abort();
     }
@@ -106,6 +117,7 @@ void ServerSend(std::string Data, bool Rel) {
 }
 
 void NetReset() {
+    Voice::VoiceManager::Get().Stop();
     TCPTerminate = false;
     GConnected = false;
     Terminate = false;
@@ -189,6 +201,20 @@ int ClientID = -1;
 void ParserAsync(std::string_view Data) {
     if (Data.empty())
         return;
+    if (Voice::IsVoiceEnvelope(Data)) {
+        auto packet = Voice::ParseVoiceEnvelope(Data);
+        if (packet.has_value()) {
+            Voice::VoiceManager::Get().HandleIncoming(*packet);
+        }
+        return;
+    }
+    if (Voice::IsSpatialPacket(Data)) {
+        auto packet = Voice::ParseSpatialPacket(Data);
+        if (packet.has_value()) {
+            Voice::VoiceManager::Get().UpdateSpatialState(*packet);
+        }
+        return;
+    }
     char Code = Data.at(0), SubCode = 0;
     if (Data.length() > 1)
         SubCode = Data.at(1);
@@ -215,9 +241,14 @@ void ServerParser(std::string_view Data) {
     ParserAsync(Data);
 }
 void NetMain(const std::string& IP, int Port) {
+    Voice::VoiceManager::Get().Start();
+    Voice::VoiceManager::Get().SetLocalPlayerId(ClientID);
+    ServerSend(Voice::VoiceManager::Get().MakeHelloPacket(), true);
     std::thread Ping(AutoPing);
     Ping.detach();
     UDPClientMain(IP, Port);
+    ServerSend(Voice::VoiceManager::Get().MakeByePacket(), true);
+    Voice::VoiceManager::Get().Stop();
     CServer = true;
     Terminate = true;
     info("Connection Terminated!");

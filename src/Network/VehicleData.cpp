@@ -5,6 +5,7 @@
 */
 
 #include "Network/network.hpp"
+#include "Voice/VoiceManager.hpp"
 #include "Zlib/Compressor.h"
 #include <stdexcept>
 
@@ -21,7 +22,10 @@
 
 #include "Logger.h"
 #include <array>
+#include <chrono>
+#include <sstream>
 #include <string>
+#include <vector>
 
 SOCKET UDPSock = -1;
 sockaddr_in* ToServer = nullptr;
@@ -58,6 +62,46 @@ void UDPParser(std::string_view Packet) {
             error("Error in decompression of UDP, ignoring");
         }
     } else {
+        if (Packet.rfind("Zp:", 0) == 0) {
+            // Best-effort parsing for vehicle position broadcasts:
+            // Zp:<playerId>:<x>:<y>:<z>[:<vx>:<vy>:<vz>]
+            std::vector<std::string_view> parts {};
+            std::string_view body = Packet.substr(3);
+            size_t start = 0;
+            while (start <= body.size()) {
+                size_t sep = body.find(':', start);
+                if (sep == std::string_view::npos) {
+                    parts.push_back(body.substr(start));
+                    break;
+                }
+                parts.push_back(body.substr(start, sep - start));
+                start = sep + 1;
+            }
+            if (parts.size() >= 4) {
+                auto toFloat = [](std::string_view value, float& out) {
+                    std::stringstream ss(std::string(value));
+                    ss >> out;
+                    return !ss.fail();
+                };
+                int player_id = -1;
+                try {
+                    player_id = std::stoi(std::string(parts[0]));
+                } catch (...) {
+                    player_id = -1;
+                }
+                if (player_id >= 0) {
+                    Voice::SpatialState state {};
+                    bool ok = toFloat(parts[1], state.x) && toFloat(parts[2], state.y) && toFloat(parts[3], state.z);
+                    if (ok && parts.size() >= 7) {
+                        ok = toFloat(parts[4], state.vx) && toFloat(parts[5], state.vy) && toFloat(parts[6], state.vz);
+                    }
+                    if (ok) {
+                        state.updated_at = std::chrono::steady_clock::now();
+                        Voice::VoiceManager::Get().UpdateSpatialState(player_id, state);
+                    }
+                }
+            }
+        }
         ServerParser(Packet);
     }
 }
